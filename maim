@@ -1,0 +1,169 @@
+import tkinter as tk
+from tkinter import ttk, scrolledtext, messagebox, filedialog
+import numpy as np
+import pandas as pd
+from sklearn.model_selection import train_test_split
+from sklearn.preprocessing import LabelEncoder
+from tensorflow.keras.models import Sequential
+from tensorflow.keras.layers import Embedding, LSTM, Dense, Conv1D, GlobalMaxPooling1D
+from tensorflow.keras.preprocessing.text import Tokenizer
+from tensorflow.keras.preprocessing.sequence import pad_sequences
+
+# Глобальные переменные
+data_path = ""  # Путь к файлу данных
+
+# Загрузка данных (замените это на ваш загрузочный код)
+# df = pd.read_csv("ваш_файл.csv")
+
+# Предварительная обработка данных
+# Ваш код по очистке и предобработке текста
+
+# Разделение данных на обучающую и тестовую выборку
+X_train, X_test, y_train, y_test = train_test_split(df['text'], df['emotion'], test_size=0.2, random_state=42)
+
+# Преобразование меток в числовой формат
+le = LabelEncoder()
+y_train_encoded = le.fit_transform(y_train)
+y_test_encoded = le.transform(y_test)
+
+# Токенизация текста
+max_words = 10000  # Максимальное количество слов для токенизации
+tokenizer = Tokenizer(num_words=max_words)
+tokenizer.fit_on_texts(X_train)
+
+# Преобразование текста в числовой формат
+X_train_seq = tokenizer.texts_to_sequences(X_train)
+X_test_seq = tokenizer.texts_to_sequences(X_test)
+
+# Построение последовательности одинаковой длины
+max_len = 100  # Максимальная длина последовательности
+X_train_pad = pad_sequences(X_train_seq, maxlen=max_len, padding='post')
+X_test_pad = pad_sequences(X_test_seq, maxlen=max_len, padding='post')
+
+# Построение LSTM модели
+model_lstm = Sequential()
+model_lstm.add(Embedding(max_words, 128, input_length=max_len))
+model_lstm.add(LSTM(128, dropout=0.2, recurrent_dropout=0.2))
+model_lstm.add(Dense(7, activation='softmax'))
+
+# Компиляция модели
+model_lstm.compile(loss='sparse_categorical_crossentropy', optimizer='adam', metrics=['accuracy'])
+
+# Обучение модели
+model_lstm.fit(X_train_pad, y_train_encoded, epochs=5, batch_size=64, validation_split=0.1)
+
+# Построение CNN модели
+model_cnn = Sequential()
+model_cnn.add(Embedding(max_words, 128, input_length=max_len))
+model_cnn.add(Conv1D(128, 5, activation='relu'))
+model_cnn.add(GlobalMaxPooling1D())
+model_cnn.add(Dense(7, activation='softmax'))
+
+# Компиляция модели
+model_cnn.compile(loss='sparse_categorical_crossentropy', optimizer='adam', metrics=['accuracy'])
+
+# Обучение модели
+model_cnn.fit(X_train_pad, y_train_encoded, epochs=5, batch_size=64, validation_split=0.1)
+
+
+# Создание GUI
+def train_model():
+    global data_path
+    if not data_path:
+        messagebox.showerror("Ошибка", "Укажите путь к файлу данных в настройках.")
+        return
+
+    model_info = model_cnn.evaluate(X_test_pad, y_test_encoded)
+    messagebox.showinfo("Обучение", f"Модель успешно обучена. Точность на тестовых данных: {model_info[1]}")
+
+
+def predict_emotion(text):
+    sequence = tokenizer.texts_to_sequences([text])
+    padded_sequence = pad_sequences(sequence, maxlen=max_len, padding='post')
+    result = model_cnn.predict(padded_sequence)
+    emotion_index = np.argmax(result)
+    return le.classes_[emotion_index]
+
+
+def classify_text():
+    text = input_text.get(1.0, tk.END)
+    emotion = predict_emotion(text)
+
+    output_text.config(state=tk.NORMAL)
+    output_text.delete(1.0, tk.END)
+    output_text.insert(tk.END, f"Классификация эмоции: {emotion}")
+    output_text.config(state=tk.DISABLED)
+
+
+def show_example():
+    example_text = "Пример текста для анализа эмоций"
+    input_text.delete(1.0, tk.END)
+    input_text.insert(tk.END, example_text)
+    classify_text()
+
+
+def set_data_path():
+    global data_path
+    data_path = filedialog.askopenfilename(title="Выберите файл данных", filetypes=[("CSV files", "*.csv")])
+    data_path_entry.delete(0, tk.END)
+    data_path_entry.insert(tk.END, data_path)
+
+
+# Создание основного окна
+root = tk.Tk()
+root.title("ИИ для анализа эмоций")
+
+# Вкладки
+tab_control = ttk.Notebook(root)
+
+# Вкладка "Начать использование"
+start_tab = ttk.Frame(tab_control)
+tab_control.add(start_tab, text="Начать использование")
+
+# Поле ввода текста
+input_label = tk.Label(start_tab, text="Введите текст:")
+input_label.pack(pady=10)
+input_text = scrolledtext.ScrolledText(start_tab, wrap=tk.WORD, width=40, height=10)
+input_text.pack(pady=10)
+
+# Поле вывода результатов
+output_label = tk.Label(start_tab, text="Результат:")
+output_label.pack(pady=10)
+output_text = scrolledtext.ScrolledText(start_tab, wrap=tk.WORD, width=40, height=5, state=tk.DISABLED)
+output_text.pack(pady=10)
+
+# Кнопки и пример
+classify_button = tk.Button(start_tab, text="Классифицировать текст", command=classify_text)
+classify_button.pack(pady=5)
+example_button = tk.Button(start_tab, text="Пример", command=show_example)
+example_button.pack(pady=5)
+
+# Вкладка "Обучение"
+train_tab = ttk.Frame(tab_control)
+tab_control.add(train_tab, text="Обучение")
+
+train_button = tk.Button(train_tab, text="Обучить модель", command=train_model)
+train_button.pack(pady=10)
+
+# Вкладка "Настройки"
+settings_tab = ttk.Frame(tab_control)
+tab_control.add(settings_tab, text="Настройки")
+
+# Поля для ввода настроек
+data_path_label = tk.Label(settings_tab, text="Путь к файлу данных:")
+data_path_label.pack(pady=5)
+data_path_entry = tk.Entry(settings_tab)
+data_path_entry.pack(pady=5)
+
+set_data_path_button = tk.Button(settings_tab, text="Выбрать файл данных", command=set_data_path)
+set_data_path_button.pack(pady=5)
+
+# Упорядочивание виджетов в окне
+tab_control.pack(expand=1, fill="both")
+
+# Запуск основного цикла
+root.mainloop()
+
+
+
+
